@@ -1,0 +1,129 @@
+#!/usr/bin/python3
+#
+#
+import datetime
+import sys
+import time
+
+from pymodbus.client.sync import ModbusTcpClient
+from pymodbus.payload import BinaryPayloadDecoder, BinaryPayloadBuilder
+from pymodbus.constants import Endian
+
+# FIXME: is there a way to auto-detect this?
+P310_IP='192.168.178.195'
+
+
+class Reg:
+    def __init__(self, name, reg, prefix, postfix=""):
+        self.name=name
+        self.reg=reg
+        self.prefix=prefix
+        self.postfix=postfix
+    def output(self, mc):
+        reg=mc.read_holding_registers(self.reg)
+        print("%s: %s %s" % (self.prefix,  reg.getRegister(0), self.postfix))
+
+
+class TempReg(Reg):
+    def output(self, mc):
+        t = mc.read_holding_registers(self.reg, 2)
+        decodert1 = BinaryPayloadDecoder.fromRegisters(t.registers, endian=Endian.Big)
+        t = decodert1.decode_32bit_float()
+        t = round(t, 2)
+        print("%s: %4.1f C" % (self.prefix, t))
+
+
+class UnixTimeReg(Reg):
+    def output(self, mc):
+        reg = mc.read_holding_registers(self.reg, 2)
+        decoder1 = BinaryPayloadDecoder.fromRegisters(reg.registers)
+        u = decoder1.decode_32bit_uint()
+        t = datetime.datetime.utcfromtimestamp(u).strftime('%Y-%m-%d %H:%M:%S')
+        print("%s: %s" % (self.prefix, t))
+
+
+class TimeInHoursReg(Reg):
+    def output(self, mc):
+        reg = mc.read_holding_registers(self.reg)
+        h = reg.getRegister(0)
+        print("%s: %s days" % (self.prefix, h/24))
+
+
+class BLStateReg(Reg):
+    def output(self, mc):
+        v = mc.read_holding_registers(self.reg).getRegister(0)
+        mode = {
+            0: "standby",
+            1: "manual mode",
+            2: "demand mode",
+            3: "week program mode",
+            4: "servo flow",
+            5: "away mode",
+            6: "summer mode",
+            7: "DI override",
+            8: "hygrostat override",
+            9: "fireplace boost mode",
+            10: "installer mode",
+            11: "fail safe 1",
+            12: "fail safe 2",
+            13: "fail off",
+            14: "defrost off",
+            15: "defrost",
+            16: "night mode",
+        }
+        print("%s: %s" % (self.prefix, mode[v]))
+
+
+# modbus manual for pluggit:
+# https://www.pluggit.com/fileserver/files/1413/609560454939420/21_08_2015_pluggit_uvc_controller_modbus_tcp_ip.pdf
+all_regs = [
+    BLStateReg("prmCurrentBLState", 472, "Mode of operaton"),
+    UnixTimeReg("prmDateTime", 108, "Current date/time"),
+    Reg("prmRomIdxSpeedLevel", 324, "Speed level of fans"),
+    Reg("prmVOC", 430, "VOC sensor value", "ppm"),
+    Reg("prmRH", 196, "RH relative humidity sensor value", "%"),
+
+    Reg("prmFilterRemainingTime", 554, "Remaining filter lifetime", " days"),
+    Reg("prmNumOfWeekProgram", 466, "Number of the Active Week Program (for Week Program mode)"),
+    TimeInHoursReg("prmWorkTime", 624, "Work time of system"),
+
+    TempReg("prmRamIdxT1", 133, "Outside air"),
+    TempReg("prmRamIdxT2", 135, "Supply temp"),
+    TempReg("prmRamIdxT3", 137, "Extract temp"),
+    TempReg("prmRamIdxT4", 139, "Exhaust temp"),
+
+    # FIXME: add these
+    #Reg("prmCurrentBLState", 472, "Mode of operaton")
+    #Reg("prmRamIdxUnitMode", 168, "Active Unit mode")
+    #Reg("prmRamIdxBypassActualState", 198, "Bypass state")
+    
+    # Not working: why?
+    #TempReg("prmBypassTmin", 444, "Minimum temperature of Bypass openning (C)",)
+    #TempReg("prmBypassTmax", 446, "Maximum temperature of Bypass openning (C)"),
+]
+
+
+if __name__ == "__main__":
+    mc = ModbusTcpClient(host=P310_IP)
+    res=mc.connect()
+    if res != True:
+        print("cannot connect")
+        sys.exit(1)
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--set-time":
+         print("Setting time")
+         prmDateTimeSet = 110
+         pb = BinaryPayloadBuilder()
+         tz = time.time()
+         # add UTC+1 offset
+         # FIXME: find via tz
+         tz = tz + 60*60
+         pb.add_32bit_uint(int(tz))
+         regs = pb.to_registers()
+         mc.write_registers(prmDateTimeSet, regs)
+
+    print("# Pluggit info")
+    for reg in all_regs:
+        reg.output(mc)
+
+    mc.close()
