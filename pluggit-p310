@@ -102,6 +102,26 @@ all_regs = [
     #TempReg("prmBypassTmax", 446, "Maximum temperature of Bypass openning (C)"),
 ]
 
+def set_mode(mode):
+    mode_dict = {
+        "demand": 0x2,
+        "manual": 0x4,
+        "week": 0x8,
+    }
+    prmRamIdxUnitMode = 168
+    pb = BinaryPayloadBuilder()
+    pb.add_32bit_uint(mode_dict[mode])
+    regs = pb.to_registers()
+    mc.write_registers(prmRamIdxUnitMode, regs)
+
+
+def set_fan_level(level):
+    prmRomIdxSpeedLevel = 324
+    pb = BinaryPayloadBuilder()
+    pb.add_32bit_uint(level)
+    regs = pb.to_registers()
+    mc.write_registers(prmRomIdxSpeedLevel, regs)
+
 
 if __name__ == "__main__":
     mc = ModbusTcpClient(host=P310_IP)
@@ -121,6 +141,21 @@ if __name__ == "__main__":
          pb.add_32bit_uint(int(tz))
          regs = pb.to_registers()
          mc.write_registers(prmDateTimeSet, regs)
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--set-manual-mode":
+        print("Set to manual mode")
+        set_mode("manual")
+        if len(sys.argv) > 2:
+            set_fan_level(int(sys.argv[2]))
+        time.sleep(0.2)
+    if len(sys.argv) > 1 and sys.argv[1] == "--set-demand-mode":
+        print("Set to demand mode")
+        set_mode("demand")
+        time.sleep(0.2)
+    if len(sys.argv) > 1 and sys.argv[1] == "--set-week-program-mode":
+        print("Set to week mode")
+        set_mode("week")
+        time.sleep(0.2)
 
     print("# Pluggit info")
     for reg in all_regs:
