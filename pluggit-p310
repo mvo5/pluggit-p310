@@ -42,11 +42,11 @@ class UnixTimeReg(Reg):
         print("%s: %s" % (self.prefix, t))
 
 
-class TimeInHoursReg(Reg):
+class TimeInHoursDisplayAsDaysReg(Reg):
     def output(self, mc):
         reg = mc.read_holding_registers(self.reg)
         h = reg.getRegister(0)
-        print("%s: %s days" % (self.prefix, h/24))
+        print("%s: %s days" % (self.prefix, int(h/24)))
 
 
 class BLStateReg(Reg):
@@ -85,7 +85,7 @@ all_regs = [
 
     Reg("prmFilterRemainingTime", 554, "Remaining filter lifetime", " days"),
     Reg("prmNumOfWeekProgram", 466, "Number of the Active Week Program (for Week Program mode)"),
-    TimeInHoursReg("prmWorkTime", 624, "Work time of system"),
+    TimeInHoursDisplayAsDaysReg("prmWorkTime", 624, "Work time of system"),
 
     TempReg("prmRamIdxT1", 133, "Outside air"),
     TempReg("prmRamIdxT2", 135, "Supply temp"),
