@@ -103,6 +103,18 @@ all_regs = [
 ]
 
 
+def set_time(mc):
+    prmDateTimeSet = 110
+    pb = BinaryPayloadBuilder()
+    tz = time.time()
+    # add UTC+1 offset
+    # FIXME: find via tz
+    tz = tz + 60*60
+    pb.add_32bit_uint(int(tz))
+    regs = pb.to_registers()
+    mc.write_registers(prmDateTimeSet, regs)
+
+
 if __name__ == "__main__":
     mc = ModbusTcpClient(host=P310_IP)
     res=mc.connect()
@@ -112,15 +124,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "--set-time":
          print("Setting time")
-         prmDateTimeSet = 110
-         pb = BinaryPayloadBuilder()
-         tz = time.time()
-         # add UTC+1 offset
-         # FIXME: find via tz
-         tz = tz + 60*60
-         pb.add_32bit_uint(int(tz))
-         regs = pb.to_registers()
-         mc.write_registers(prmDateTimeSet, regs)
+         set_time(mc)
 
     print("# Pluggit info")
     for reg in all_regs:
