@@ -5,7 +5,10 @@ import datetime
 import sys
 import time
 
-from pymodbus.client.sync import ModbusTcpClient
+try:
+    from pymodbus.client.sync import ModbusTcpClient
+except ImportError:
+    from pymodbus.client import ModbusTcpClient
 from pymodbus.payload import BinaryPayloadDecoder, BinaryPayloadBuilder
 from pymodbus.constants import Endian
 
