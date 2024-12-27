@@ -30,7 +30,7 @@ class Reg:
 class TempReg(Reg):
     def output(self, mc):
         t = mc.read_holding_registers(self.reg, 2)
-        decodert1 = BinaryPayloadDecoder.fromRegisters(t.registers, Endian.Big)
+        decodert1 = BinaryPayloadDecoder.fromRegisters(t.registers, Endian.BIG)
         t = decodert1.decode_32bit_float()
         t = round(t, 2)
         print("%s: %4.1f C" % (self.prefix, t))
