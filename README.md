@@ -31,6 +31,14 @@ $ sudo apt install -y python3-pymodbus
 
 With that all dependencies are installed.
 
+## Hacking
+
+Run unit tests with:
+```
+$ python3 -m unittest
+```
+
+
 ## TODO
  * top-like display
  * add argparse
