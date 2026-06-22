@@ -9,11 +9,26 @@ try:
     from pymodbus.client.sync import ModbusTcpClient
 except ImportError:
     from pymodbus.client import ModbusTcpClient
-from pymodbus.payload import BinaryPayloadDecoder, BinaryPayloadBuilder
-from pymodbus.constants import Endian
+
+# pymodbus >= 3.9 removed pymodbus.payload (BinaryPayloadDecoder/Builder).
+# Conversion is now done via the client's convert_{from,to}_registers helpers.
+DATATYPE = ModbusTcpClient.DATATYPE
 
 # FIXME: is there a way to auto-detect this?
-P310_IP='192.168.178.195'
+P310_IP='192.168.178.190'
+
+
+def read_reg(mc, reg, datatype):
+    """Read a (possibly multi-word) register and decode it as datatype."""
+    count = 2 if datatype in (DATATYPE.UINT32, DATATYPE.FLOAT32) else 1
+    r = mc.read_holding_registers(reg, count=count)
+    return ModbusTcpClient.convert_from_registers(r.registers, datatype, word_order="big")
+
+
+def write_u32(mc, reg, value):
+    """Encode value as a 32bit uint and write it to reg."""
+    regs = ModbusTcpClient.convert_to_registers(value, DATATYPE.UINT32, word_order="big")
+    mc.write_registers(reg, regs)
 
 
 class Reg:
@@ -24,23 +39,19 @@ class Reg:
         self.postfix=postfix
     def output(self, mc):
         reg=mc.read_holding_registers(self.reg)
-        print("%s: %s %s" % (self.prefix,  reg.getRegister(0), self.postfix))
+        print("%s: %s %s" % (self.prefix,  reg.registers[0], self.postfix))
 
 
 class TempReg(Reg):
     def output(self, mc):
-        t = mc.read_holding_registers(self.reg, 2)
-        decodert1 = BinaryPayloadDecoder.fromRegisters(t.registers, Endian.BIG)
-        t = decodert1.decode_32bit_float()
+        t = read_reg(mc, self.reg, DATATYPE.FLOAT32)
         t = round(t, 2)
         print("%s: %4.1f C" % (self.prefix, t))
 
 
 class UnixTimeReg(Reg):
     def output(self, mc):
-        reg = mc.read_holding_registers(self.reg, 2)
-        decoder1 = BinaryPayloadDecoder.fromRegisters(reg.registers)
-        u = decoder1.decode_32bit_uint()
+        u = read_reg(mc, self.reg, DATATYPE.UINT32)
         t = datetime.datetime.utcfromtimestamp(u).strftime('%Y-%m-%d %H:%M:%S')
         print("%s: %s" % (self.prefix, t))
 
@@ -48,13 +59,13 @@ class UnixTimeReg(Reg):
 class TimeInHoursDisplayAsDaysReg(Reg):
     def output(self, mc):
         reg = mc.read_holding_registers(self.reg)
-        h = reg.getRegister(0)
+        h = reg.registers[0]
         print("%s: %s days" % (self.prefix, int(h/24)))
 
 
 class BLStateReg(Reg):
     def output(self, mc):
-        v = mc.read_holding_registers(self.reg).getRegister(0)
+        v = mc.read_holding_registers(self.reg).registers[0]
         mode = {
             0: "standby",
             1: "manual mode",
@@ -112,18 +123,12 @@ def set_mode(mode):
         "week": 0x8,
     }
     prmRamIdxUnitMode = 168
-    pb = BinaryPayloadBuilder()
-    pb.add_32bit_uint(mode_dict[mode])
-    regs = pb.to_registers()
-    mc.write_registers(prmRamIdxUnitMode, regs)
+    write_u32(mc, prmRamIdxUnitMode, mode_dict[mode])
 
 
 def set_fan_level(level):
     prmRomIdxSpeedLevel = 324
-    pb = BinaryPayloadBuilder()
-    pb.add_32bit_uint(level)
-    regs = pb.to_registers()
-    mc.write_registers(prmRomIdxSpeedLevel, regs)
+    write_u32(mc, prmRomIdxSpeedLevel, level)
 
 
 if __name__ == "__main__":
@@ -136,14 +141,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--set-time":
          print("Setting time")
          prmDateTimeSet = 110
-         pb = BinaryPayloadBuilder()
          tz = time.time()
          # add UTC+1 offset
          # FIXME: find via tz
          tz = tz + 60*60
-         pb.add_32bit_uint(int(tz))
-         regs = pb.to_registers()
-         mc.write_registers(prmDateTimeSet, regs)
+         write_u32(mc, prmDateTimeSet, int(tz))
 
     if len(sys.argv) > 1 and sys.argv[1] == "--set-manual-mode":
         print("Set to manual mode")
