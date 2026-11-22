@@ -2,6 +2,7 @@
 #
 #
 import datetime
+import struct
 import sys
 import time
 
@@ -10,25 +11,28 @@ try:
 except ImportError:
     from pymodbus.client import ModbusTcpClient
 
-# pymodbus >= 3.9 removed pymodbus.payload (BinaryPayloadDecoder/Builder).
-# Conversion is now done via the client's convert_{from,to}_registers helpers.
-DATATYPE = ModbusTcpClient.DATATYPE
-
 # FIXME: is there a way to auto-detect this?
-P310_IP='192.168.178.190'
+P310_IP='192.168.178.103'
 
 
-def read_reg(mc, reg, datatype):
-    """Read a (possibly multi-word) register and decode it as datatype."""
-    count = 2 if datatype in (DATATYPE.UINT32, DATATYPE.FLOAT32) else 1
-    r = mc.read_holding_registers(reg, count=count)
-    return ModbusTcpClient.convert_from_registers(r.registers, datatype, word_order="big")
+# The pluggit stores 32bit values in two registers, low word first.
+# The conversion is done by hand here because the pymodbus helpers for
+# this changed incompatibly over time (pymodbus.payload was removed in
+# 3.9, convert_{from,to}_registers/DATATYPE only exist in newer versions).
+def read_u32(mc, reg):
+    """Read a 32bit uint from the two registers starting at reg."""
+    lo, hi = mc.read_holding_registers(reg, count=2).registers
+    return (hi << 16) | lo
+
+
+def read_float32(mc, reg):
+    """Read a 32bit float from the two registers starting at reg."""
+    return struct.unpack(">f", struct.pack(">I", read_u32(mc, reg)))[0]
 
 
 def write_u32(mc, reg, value):
-    """Encode value as a 32bit uint and write it to reg."""
-    regs = ModbusTcpClient.convert_to_registers(value, DATATYPE.UINT32, word_order="big")
-    mc.write_registers(reg, regs)
+    """Write value as a 32bit uint to the two registers starting at reg."""
+    mc.write_registers(reg, [value & 0xffff, (value >> 16) & 0xffff])
 
 
 class Reg:
@@ -44,15 +48,15 @@ class Reg:
 
 class TempReg(Reg):
     def output(self, mc):
-        t = read_reg(mc, self.reg, DATATYPE.FLOAT32)
+        t = read_float32(mc, self.reg)
         t = round(t, 2)
         print("%s: %4.1f C" % (self.prefix, t))
 
 
 class UnixTimeReg(Reg):
     def output(self, mc):
-        u = read_reg(mc, self.reg, DATATYPE.UINT32)
-        t = datetime.datetime.utcfromtimestamp(u).strftime('%Y-%m-%d %H:%M:%S')
+        u = read_u32(mc, self.reg)
+        t = datetime.datetime.fromtimestamp(u, datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         print("%s: %s" % (self.prefix, t))
 
 
@@ -101,10 +105,10 @@ all_regs = [
     Reg("prmNumOfWeekProgram", 466, "Number of the Active Week Program (for Week Program mode)"),
     TimeInHoursDisplayAsDaysReg("prmWorkTime", 624, "Work time of system"),
 
-    TempReg("prmRamIdxT1", 133, "Outside air"),
-    TempReg("prmRamIdxT2", 135, "Supply temp"),
-    TempReg("prmRamIdxT3", 137, "Extract temp"),
-    TempReg("prmRamIdxT4", 139, "Exhaust temp"),
+    TempReg("prmRamIdxT1", 132, "Outside air"),
+    TempReg("prmRamIdxT2", 134, "Supply temp"),
+    TempReg("prmRamIdxT3", 136, "Extract temp"),
+    TempReg("prmRamIdxT4", 138, "Exhaust temp"),
 
     # FIXME: add these
     #Reg("prmCurrentBLState", 472, "Mode of operaton")
