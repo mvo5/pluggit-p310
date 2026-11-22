@@ -2,6 +2,7 @@
 #
 #
 import datetime
+import os
 import struct
 import sys
 import time
@@ -141,12 +142,42 @@ def set_fan_level(level):
     write_u32(mc, prmRomIdxSpeedLevel, level)
 
 
+def limit_manual_mode(max_minutes):
+    """Switch back to the week program if the unit was in manual mode
+    for more than max_minutes.
+
+    Meant to be run regularly (e.g. from cron). The time when manual
+    mode was first seen is tracked via the mtime of a state file.
+    """
+    state_file = os.path.expanduser("~/.cache/pluggit-p310/manual-mode-since")
+
+    if current_bl_state.mode(mc) != "manual mode":
+        if os.path.exists(state_file):
+            os.remove(state_file)
+        return
+    if not os.path.exists(state_file):
+        os.makedirs(os.path.dirname(state_file), exist_ok=True)
+        with open(state_file, "w"):
+            pass
+        return
+    if time.time() - os.path.getmtime(state_file) > max_minutes * 60:
+        print("Manual mode for more than %s min, set to week mode" % max_minutes)
+        set_mode("week")
+        os.remove(state_file)
+
+
 if __name__ == "__main__":
     mc = ModbusTcpClient(host=P310_IP)
     res=mc.connect()
     if res != True:
         print("cannot connect")
         sys.exit(1)
+
+    # for cron: silent unless the mode is actually changed
+    if len(sys.argv) > 2 and sys.argv[1] == "--limit-manual-mode":
+        limit_manual_mode(int(sys.argv[2]))
+        mc.close()
+        sys.exit(0)
 
     if len(sys.argv) > 1 and sys.argv[1] == "--set-time":
          print("Setting time")
