@@ -2,6 +2,7 @@
 #
 #
 import datetime
+import enum
 import os
 import struct
 import sys
@@ -71,30 +72,37 @@ class TimeInHoursDisplayAsDaysReg(Reg):
         print("%s: %s days" % (self.prefix, int(h/24)))
 
 
+class BLState(enum.IntEnum):
+    def __new__(cls, value, label):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        obj.label = label
+        return obj
+
+    STANDBY = 0, "standby"
+    MANUAL = 1, "manual mode"
+    DEMAND = 2, "demand mode"
+    WEEK_PROGRAM = 3, "week program mode"
+    SERVO_FLOW = 4, "servo flow"
+    AWAY = 5, "away mode"
+    SUMMER = 6, "summer mode"
+    DI_OVERRIDE = 7, "DI override"
+    HYGROSTAT_OVERRIDE = 8, "hygrostat override"
+    FIREPLACE_BOOST = 9, "fireplace boost mode"
+    INSTALLER = 10, "installer mode"
+    FAIL_SAFE_1 = 11, "fail safe 1"
+    FAIL_SAFE_2 = 12, "fail safe 2"
+    FAIL_OFF = 13, "fail off"
+    DEFROST_OFF = 14, "defrost off"
+    DEFROST = 15, "defrost"
+    NIGHT = 16, "night mode"
+
+
 class BLStateReg(Reg):
-    MODES = {
-        0: "standby",
-        1: "manual mode",
-        2: "demand mode",
-        3: "week program mode",
-        4: "servo flow",
-        5: "away mode",
-        6: "summer mode",
-        7: "DI override",
-        8: "hygrostat override",
-        9: "fireplace boost mode",
-        10: "installer mode",
-        11: "fail safe 1",
-        12: "fail safe 2",
-        13: "fail off",
-        14: "defrost off",
-        15: "defrost",
-        16: "night mode",
-    }
-    def mode(self, mc):
-        return self.MODES[self.read(mc)]
+    def read(self, mc):
+        return BLState(super().read(mc))
     def output(self, mc):
-        print("%s: %s" % (self.prefix, self.mode(mc)))
+        print("%s: %s" % (self.prefix, self.read(mc).label))
 
 
 # modbus manual for pluggit:
@@ -151,7 +159,7 @@ def limit_manual_mode(max_minutes):
     """
     state_file = os.path.expanduser("~/.cache/pluggit-p310/manual-mode-since")
 
-    if current_bl_state.mode(mc) != "manual mode":
+    if current_bl_state.read(mc) != BLState.MANUAL:
         if os.path.exists(state_file):
             os.remove(state_file)
         return
