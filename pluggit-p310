@@ -41,61 +41,67 @@ class Reg:
         self.reg=reg
         self.prefix=prefix
         self.postfix=postfix
+    def read(self, mc):
+        return mc.read_holding_registers(self.reg).registers[0]
     def output(self, mc):
-        reg=mc.read_holding_registers(self.reg)
-        print("%s: %s %s" % (self.prefix,  reg.registers[0], self.postfix))
+        print("%s: %s %s" % (self.prefix,  self.read(mc), self.postfix))
 
 
 class TempReg(Reg):
+    def read(self, mc):
+        return read_float32(mc, self.reg)
     def output(self, mc):
-        t = read_float32(mc, self.reg)
-        t = round(t, 2)
+        t = round(self.read(mc), 2)
         print("%s: %4.1f C" % (self.prefix, t))
 
 
 class UnixTimeReg(Reg):
+    def read(self, mc):
+        return read_u32(mc, self.reg)
     def output(self, mc):
-        u = read_u32(mc, self.reg)
+        u = self.read(mc)
         t = datetime.datetime.fromtimestamp(u, datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         print("%s: %s" % (self.prefix, t))
 
 
 class TimeInHoursDisplayAsDaysReg(Reg):
     def output(self, mc):
-        reg = mc.read_holding_registers(self.reg)
-        h = reg.registers[0]
+        h = self.read(mc)
         print("%s: %s days" % (self.prefix, int(h/24)))
 
 
 class BLStateReg(Reg):
+    MODES = {
+        0: "standby",
+        1: "manual mode",
+        2: "demand mode",
+        3: "week program mode",
+        4: "servo flow",
+        5: "away mode",
+        6: "summer mode",
+        7: "DI override",
+        8: "hygrostat override",
+        9: "fireplace boost mode",
+        10: "installer mode",
+        11: "fail safe 1",
+        12: "fail safe 2",
+        13: "fail off",
+        14: "defrost off",
+        15: "defrost",
+        16: "night mode",
+    }
+    def mode(self, mc):
+        return self.MODES[self.read(mc)]
     def output(self, mc):
-        v = mc.read_holding_registers(self.reg).registers[0]
-        mode = {
-            0: "standby",
-            1: "manual mode",
-            2: "demand mode",
-            3: "week program mode",
-            4: "servo flow",
-            5: "away mode",
-            6: "summer mode",
-            7: "DI override",
-            8: "hygrostat override",
-            9: "fireplace boost mode",
-            10: "installer mode",
-            11: "fail safe 1",
-            12: "fail safe 2",
-            13: "fail off",
-            14: "defrost off",
-            15: "defrost",
-            16: "night mode",
-        }
-        print("%s: %s" % (self.prefix, mode[v]))
+        print("%s: %s" % (self.prefix, self.mode(mc)))
 
 
 # modbus manual for pluggit:
 # https://www.pluggit.com/fileserver/files/1413/609560454939420/21_08_2015_pluggit_uvc_controller_modbus_tcp_ip.pdf
+current_bl_state = BLStateReg("prmCurrentBLState", 472, "Mode of operaton")
+
 all_regs = [
-    BLStateReg("prmCurrentBLState", 472, "Mode of operaton"),
+    current_bl_state,
     UnixTimeReg("prmDateTime", 108, "Current date/time"),
     Reg("prmRomIdxSpeedLevel", 324, "Speed level of fans"),
     Reg("prmVOC", 430, "VOC sensor value", "ppm"),
